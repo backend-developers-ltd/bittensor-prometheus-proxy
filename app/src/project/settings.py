@@ -270,7 +270,7 @@ if REDIS_HOST:
     CELERY_SEND_EVENTS = True  # needed for worker monitoring
     CELERY_BEAT_SCHEDULE = {  # type: ignore
         "fetch_validators": {
-            "task": "compute_horde_miner.miner.tasks.fetch_validators",
+            "task": "project.core.tasks.fetch_validators",
             "schedule": 60,
             "options": {},
         },

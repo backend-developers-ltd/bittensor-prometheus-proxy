@@ -43,7 +43,7 @@ def prometheus_outbound_proxy(request):
         return HttpResponse(status=500, content=msg.encode())
     data = request.body
 
-    prometheus_remote_url = urljoin(settings.CENTRAL_PROMETHEUS_PROXY_URL, 'prometheus_inbound_proxy')
+    prometheus_remote_url = urljoin(settings.CENTRAL_PROMETHEUS_PROXY_URL, 'prometheus_inbound_proxy/')
 
     try:
         response = session.post(
@@ -63,7 +63,10 @@ def prometheus_outbound_proxy(request):
     logger.debug(f"Central prometheus proxy replied with {response.status_code}, {response.content[:200]}")
     return HttpResponse(
         status=response.status_code,
-        headers=response.headers,
+        headers={k: v for k, v in response.headers.items() if k.lower() not in [
+            'connection', 'keep-alive', 'public',
+            'proxy-authenticate', 'transfer-encoding', 'upgrade'
+        ]},
         content=response.content,
     )
 
