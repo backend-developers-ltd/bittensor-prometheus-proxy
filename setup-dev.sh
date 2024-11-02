@@ -29,6 +29,8 @@ fi
 # Set symlinks
 ln -sf "${ENV_DIR}/.env" .env
 ln -sf "${ENV_DIR}/docker-compose.yml" docker-compose.yml
+cp "${ENV_DIR}/central-prometheus.yml" central-prometheus.yml
+cp "${ENV_DIR}/on-site-prometheus.yml" on-site-prometheus.yml
 
 # shellcheck disable=SC2164
 cd "${PROJECT_DIR}/app/"

@@ -4,9 +4,11 @@ Django settings for project project.
 
 import inspect
 import logging
+import pathlib
 from datetime import timedelta
 from functools import wraps
 
+import bittensor
 import environ
 import structlog
 
@@ -82,7 +84,9 @@ INSTALLED_APPS = [
     "django_structlog",
     "constance",
     "project.core",
+    "cacheops",
 ]
+
 PROMETHEUS_EXPORT_MIGRATIONS = env.bool("PROMETHEUS_EXPORT_MIGRATIONS", default=True)
 PROMETHEUS_LATENCY_BUCKETS = (
     0.008,
@@ -237,6 +241,20 @@ CONSTANCE_CONFIG = {
 }
 
 
+CACHEOPS_REDIS = {
+    'host': REDIS_HOST,
+    'port': REDIS_PORT,
+    'db': 1,
+    'socket_timeout': 3,
+}
+
+CACHEOPS = {
+    'project.core.Validator': {'ops': 'all', 'timeout': 60*15},
+}
+
+CACHEOPS_DEGRADE_ON_FAILURE = True
+
+
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="")
 CELERY_RESULT_BACKEND = env("CELERY_BROKER_URL", default="")  # store results in Redis
 CELERY_RESULT_EXPIRES = int(timedelta(days=1).total_seconds())  # time until task result deletion
@@ -244,14 +262,13 @@ CELERY_COMPRESSION = "gzip"  # task compression
 CELERY_MESSAGE_COMPRESSION = "gzip"  # result compression
 CELERY_SEND_EVENTS = True  # needed for worker monitoring
 CELERY_BEAT_SCHEDULE = {  # type: ignore
-    # 'task_name': {
-    #     'task': "project.core.tasks.demo_task",
-    #     'args': [2, 2],
-    #     'kwargs': {},
-    #     'schedule': crontab(minute=0, hour=0),
-    #     'options': {"time_limit": 300},
-    # },
+    "fetch_validators": {
+        "task": "compute_horde_miner.miner.tasks.fetch_validators",
+        "schedule": 60,
+        "options": {},
+    },
 }
+
 CELERY_TASK_CREATE_MISSING_QUEUES = False
 CELERY_TASK_QUEUES = (Queue("celery"), Queue("worker"), Queue("dead_letter"))
 CELERY_TASK_DEFAULT_EXCHANGE = "celery"
@@ -324,6 +341,40 @@ LOGGING = {
         },
     },
 }
+
+CENTRAL_PROMETHEUS_PROXY_URL = env.str("CENTRAL_PROMETHEUS_PROXY_URL", default="")
+UPSTREAM_PROMETHEUS_URL = env.str("UPSTREAM_PROMETHEUS_URL", default="")
+if not UPSTREAM_PROMETHEUS_URL and not CENTRAL_PROMETHEUS_PROXY_URL:
+    raise RuntimeError("Either UPSTREAM_PROMETHEUS_URL or CENTRAL_PROMETHEUS_PROXY_URL must be set")
+
+BITTENSOR_NETUID = env.int("BITTENSOR_NETUID")
+BITTENSOR_NETWORK = env.str("BITTENSOR_NETWORK")
+
+BITTENSOR_WALLET_DIRECTORY = env.path(
+    "BITTENSOR_WALLET_DIRECTORY",
+    default=pathlib.Path("~").expanduser() / ".bittensor" / "wallets",
+)
+BITTENSOR_WALLET_NAME = env.str("BITTENSOR_WALLET_NAME")
+BITTENSOR_WALLET_HOTKEY_NAME = env.str("BITTENSOR_WALLET_HOTKEY_NAME")
+
+_wallet = None
+
+
+def BITTENSOR_WALLET() -> bittensor.wallet:
+    global _wallet
+    if _wallet:
+        return _wallet
+
+    if not BITTENSOR_WALLET_NAME or not BITTENSOR_WALLET_HOTKEY_NAME:
+        raise RuntimeError("Wallet not configured")
+    wallet = bittensor.wallet(
+        name=BITTENSOR_WALLET_NAME,
+        hotkey=BITTENSOR_WALLET_HOTKEY_NAME,
+        path=str(BITTENSOR_WALLET_DIRECTORY),
+    )
+    wallet.hotkey_file.get_keypair()  # this raises errors if the keys are inaccessible
+    _wallet = wallet
+    return wallet
 
 
 def configure_structlog():
