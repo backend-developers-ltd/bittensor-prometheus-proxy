@@ -8,7 +8,7 @@ scrape_configs:
     static_configs:
       - targets: ['host.docker.internal:9100']
         labels:
-          hotkey: 'replace-me'
+          hotkey: '{hotkey}'
 
 remote_write:
   - url: "http://host.docker.internal:8000/prometheus_outbound_proxy"

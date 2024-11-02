@@ -57,9 +57,12 @@ def prometheus_outbound_proxy(request):
             timeout=TIMEOUT,
         )
     except requests.exceptions.RequestException as e:
+        logger.info(f"Sending to central prometheus proxy failed: {e}")
         return HttpResponse(status=500, content=type(e).__name__)
 
+    logger.debug(f"Central prometheus proxy replied with {response.status_code}, {response.content[:200]}")
     return HttpResponse(
+        status=response.status_code,
         headers=response.headers,
         content=response.content,
     )

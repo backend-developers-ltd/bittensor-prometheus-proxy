@@ -37,12 +37,15 @@ services:
       - 19090:9090
 
   on-site-prometheus:
-    image: prom/prometheus:v2.46.0
+    image: backenddevelopersltd/bittensor_prometheus
     command:
-      - --config.file=/etc/prometheus/prometheus.yml
       - --log.level=debug
+    environment:
+      - BITTENSOR_WALLET_NAME=${BITTENSOR_WALLET_NAME}
+      - BITTENSOR_WALLET_HOTKEY_NAME=${BITTENSOR_WALLET_HOTKEY_NAME}
     volumes:
-      - ./on-site-prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./on-site-prometheus.yml:/etc/prometheus/prometheus.yml.template
+      - ~/.bittensor/wallets:/wallets
     restart: unless-stopped
     depends_on:
       - node-exporter
