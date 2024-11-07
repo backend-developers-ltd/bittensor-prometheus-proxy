@@ -1,0 +1,1 @@
+plantuml -tsvg ./diagram.plantuml

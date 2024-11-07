@@ -1,0 +1,16 @@
+@startuml
+participant "On-site Exporters" as E
+participant "On-site Prometheus" as P
+participant "On-site Proxy" as OP
+participant "Central Proxy" as CP
+participant "Central DB and Redis" as DB
+participant "Central Prometheus" as CProm
+
+P -> E: Scrape metrics
+P -> OP: Push metrics data blob, include hotkey as label
+OP -> OP: Sign the blob
+OP -> CP: Push metrics data blob
+CP -> DB: Keep a list of registered validators, cached
+CP -> CP: Verify signature, verify "hotkey" label in each metric
+CP -> CProm: Push metrics data blob
+@enduml
