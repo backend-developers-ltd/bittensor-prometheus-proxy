@@ -7,9 +7,6 @@ import bittensor
 BITTENSOR_WALLET_NAME = os.environ.get("BITTENSOR_WALLET_NAME")
 BITTENSOR_WALLET_HOTKEY_NAME = os.environ.get("BITTENSOR_WALLET_HOTKEY_NAME")
 
-if not BITTENSOR_WALLET_NAME or not BITTENSOR_WALLET_HOTKEY_NAME:
-    raise RuntimeError("You must set BITTENSOR_WALLET_NAME and BITTENSOR_WALLET_HOTKEY_NAME env vars")
-
 
 def get_wallet() -> bittensor.wallet:
     wallet = bittensor.wallet(
@@ -27,6 +24,8 @@ def read_and_substitute_config(hotkey: str):
 
 
 def main():
+    if not BITTENSOR_WALLET_NAME or not BITTENSOR_WALLET_HOTKEY_NAME:
+        raise RuntimeError("You must set BITTENSOR_WALLET_NAME and BITTENSOR_WALLET_HOTKEY_NAME env vars")
     wallet = get_wallet()
     read_and_substitute_config(wallet.hotkey.ss58_address)
 
