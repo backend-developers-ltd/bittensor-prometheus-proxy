@@ -1,7 +1,7 @@
 """
 Django settings for project project.
 """
-
+import functools
 import inspect
 import logging
 import pathlib
@@ -371,14 +371,9 @@ if CENTRAL_PROMETHEUS_PROXY_URL:
         raise RuntimeError("Both BITTENSOR_WALLET_NAME and BITTENSOR_WALLET_HOTKEY_NAME must be set when "
                            "CENTRAL_PROMETHEUS_PROXY_URL is defined")
 
-_wallet = None
 
-
+@functools.cache
 def BITTENSOR_WALLET() -> bittensor.wallet:
-    global _wallet
-    if _wallet:
-        return _wallet
-
     if not BITTENSOR_WALLET_NAME or not BITTENSOR_WALLET_HOTKEY_NAME:
         raise RuntimeError("Wallet not configured")
     wallet = bittensor.wallet(
