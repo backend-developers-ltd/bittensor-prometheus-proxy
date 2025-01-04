@@ -4,9 +4,10 @@
 
 PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../../
 
-APP_SUFFIX="-$1"
+if [ "$1" == "staging" ]; then
+    APP_SUFFIX="-staging"
+else
+    APP_SUFFIX=""
+fi
 
-APP_OWNER=$(aws sts get-caller-identity --region us-east-1 --query "Account" --output text)
-APP_REGION="us-east-1"
-APP_NAME="bittensor-prometheus-proxy${APP_SUFFIX}"
-CLOUDFRONT_BUCKET="${APP_NAME}-spa${APP_SUFFIX}"
+IMAGE_NAME="backenddevelopersltd/bittensor-prometheus-proxy${APP_SUFFIX}"

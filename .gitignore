@@ -18,3 +18,5 @@ media/
 .terraform/
 .nox/
 __pycache__
+./central-prometheus.yml
+./on-site-prometheus.yml

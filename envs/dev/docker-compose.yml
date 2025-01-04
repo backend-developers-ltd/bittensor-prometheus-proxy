@@ -23,3 +23,45 @@ services:
       - ./db/data:/var/lib/postgresql/data
     ports:
       - ${POSTGRES_PORT}:5432
+
+  central-prometheus:
+    image: prom/prometheus:v2.46.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --log.level=debug
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./central-prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+    ports:
+      - 19090:9090
+
+  on-site-prometheus:
+    image: backenddevelopersltd/bittensor_prometheus
+    command:
+      - --log.level=debug
+    environment:
+      - BITTENSOR_WALLET_NAME=${BITTENSOR_WALLET_NAME}
+      - BITTENSOR_WALLET_HOTKEY_NAME=${BITTENSOR_WALLET_HOTKEY_NAME}
+    volumes:
+      - ./on-site-prometheus.yml:/etc/prometheus/prometheus.yml.template
+      - ~/.bittensor/wallets:/wallets
+    restart: unless-stopped
+    depends_on:
+      - node-exporter
+      - central-prometheus
+    ports:
+      - 29090:9090
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|run|boot|var/.+)($$|/)'
+

@@ -1,7 +1,14 @@
 # bittensor-prometheus-proxy
 
-Proxy that allows for pushing prometheus metrics signed with bittensor wallets
+Proxy that allows for 
 
+1. pushing prometheus metrics signed with bittensor wallets. Operating in this manner does not require a db or redis.
+2. verifying incoming signed metrics. Operating in this manner does not require a wallet. Verification is two-fold:
+   1. the full payload is signed, both the signature and the hotkey are included in the headers - that is verified 
+   2. the metrics data blob is unpacked and each metric is checked for the "hotkey" label - it has to be the same as
+      the value in the header
+
+![Diagram](./docs/diagram.svg)
 - - -
 
 # Base requirements
@@ -15,11 +22,20 @@ Proxy that allows for pushing prometheus metrics signed with bittensor wallets
 
 ```sh
 ./setup-dev.sh
-docker compose up -d
+docker compose up -d  # this will also start node_Exporter and two prometheus instances
 cd app/src
 pdm run manage.py wait_for_database --timeout 10
 pdm run manage.py migrate
-pdm run manage.py runserver
+pdm run manage.py runserver 0.0.0.0:8000
+```
+
+this setup requires a working bittensor wallet (for the on-site prometheus to read the hotkey and so that the proxy
+can sign requests). Requests will be sent from on-site prometheus to proxy then to the same proxy (different view 
+though) and to the central prometheus. Starting celery and celery beat is not, however, required for local development,
+because instead of having a periodic task populate the validator list, one can add records to it manually using
+
+```bash
+python manage.py debug_add_validator <hotkey>
 ```
 
 # Setup production environment (git deployment)
@@ -157,39 +173,6 @@ with some_calculation_time.labels('blabla').time():
 ```
 
 
-
-# Cloud deployment
-
-## AWS
-
-<details>
-Initiate the infrastructure with Terraform:
-TODO
-
-To push a new version of the application to AWS, just push to a branch named `deploy-$(ENVIRONMENT_NAME)`.
-Typical values for `$(ENVIRONMENT_NAME)` are `prod` and `staging`.
-For this to work, GitHub actions needs to be provided with credentials for an account that has the following policies enabled:
-
-- AutoScalingFullAccess
-- AmazonEC2ContainerRegistryFullAccess
-- AmazonS3FullAccess
-
-See `.github/workflows/cd.yml` to find out the secret names.
-
-For more details see [README_AWS.md](README_AWS.md)
-</details>
-
-## Vultr
-
-<details>
-Initiate the infrastructure with Terraform and cloud-init:
-
-- see Terraform template in `<project>/devops/vultr_tf/core/`
-- see scripts for interacting with Vultr API in `<project>/devops/vultr_scripts/`
-  - note these scripts need `vultr-cli` installed
-
-For more details see [README_vultr.md](README_vultr.md).
-</details>
 
 # Backups
 

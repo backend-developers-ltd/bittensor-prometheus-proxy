@@ -1,12 +1,14 @@
 """
 Django settings for project project.
 """
-
+import functools
 import inspect
 import logging
+import pathlib
 from datetime import timedelta
 from functools import wraps
 
+import bittensor
 import environ
 import structlog
 
@@ -52,7 +54,7 @@ ENV = env("ENV")
 SECRET_KEY = env("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = env("DEBUG")
+DEBUG = env("DEBUG", default=False)
 
 ALLOWED_HOSTS = ["*"]
 
@@ -82,7 +84,9 @@ INSTALLED_APPS = [
     "django_structlog",
     "constance",
     "project.core",
+    "cacheops",
 ]
+
 PROMETHEUS_EXPORT_MIGRATIONS = env.bool("PROMETHEUS_EXPORT_MIGRATIONS", default=True)
 PROMETHEUS_LATENCY_BUCKETS = (
     0.008,
@@ -136,7 +140,7 @@ if CORS_ENABLED := env.bool("CORS_ENABLED", default=True):
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # Content Security Policy
-if CSP_ENABLED := env.bool("CSP_ENABLED"):
+if CSP_ENABLED := env.bool("CSP_ENABLED", default=False):
     MIDDLEWARE.append("csp.middleware.CSPMiddleware")
 
     CSP_REPORT_ONLY = env.bool("CSP_REPORT_ONLY", default=True)
@@ -180,12 +184,12 @@ TEMPLATES = [
 WSGI_APPLICATION = "project.wsgi.application"
 
 DATABASES = {}
-if env("DATABASE_POOL_URL"):  # DB transaction-based connection pool, such as one provided PgBouncer
+if env("DATABASE_POOL_URL", default=None):  # DB transaction-based connection pool, such as one provided PgBouncer
     DATABASES["default"] = {
         **env.db_url("DATABASE_POOL_URL"),
         "DISABLE_SERVER_SIDE_CURSORS": True,  # prevents random cursor errors with transaction-based connection pool
     }
-elif env("DATABASE_URL"):
+elif env("DATABASE_URL", default=None):
     DATABASES["default"] = env.db_url("DATABASE_URL")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -227,9 +231,14 @@ if env.bool("HTTPS_REDIRECT", default=False) and not DEBUG:
     CSRF_COOKIE_SECURE = True
 else:
     SECURE_SSL_REDIRECT = False
-REDIS_HOST = env("REDIS_HOST")
-REDIS_PORT = env.int("REDIS_PORT")
-REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
+
+REDIS_HOST = env("REDIS_HOST", default=None)
+REDIS_PORT = env.int("REDIS_PORT", default=None)
+if (REDIS_HOST is None) != (REDIS_PORT is None):
+    raise RuntimeError("Either set both redis host and port or none")
+
+if REDIS_HOST:
+    REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 
 CONSTANCE_BACKEND = "constance.backends.database.DatabaseBackend"
 CONSTANCE_CONFIG = {
@@ -237,45 +246,51 @@ CONSTANCE_CONFIG = {
 }
 
 
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="")
-CELERY_RESULT_BACKEND = env("CELERY_BROKER_URL", default="")  # store results in Redis
-CELERY_RESULT_EXPIRES = int(timedelta(days=1).total_seconds())  # time until task result deletion
-CELERY_COMPRESSION = "gzip"  # task compression
-CELERY_MESSAGE_COMPRESSION = "gzip"  # result compression
-CELERY_SEND_EVENTS = True  # needed for worker monitoring
-CELERY_BEAT_SCHEDULE = {  # type: ignore
-    # 'task_name': {
-    #     'task': "project.core.tasks.demo_task",
-    #     'args': [2, 2],
-    #     'kwargs': {},
-    #     'schedule': crontab(minute=0, hour=0),
-    #     'options': {"time_limit": 300},
-    # },
-}
-CELERY_TASK_CREATE_MISSING_QUEUES = False
-CELERY_TASK_QUEUES = (Queue("celery"), Queue("worker"), Queue("dead_letter"))
-CELERY_TASK_DEFAULT_EXCHANGE = "celery"
-CELERY_TASK_DEFAULT_ROUTING_KEY = "celery"
-CELERY_TASK_ANNOTATIONS = {"*": {"acks_late": True, "reject_on_worker_lost": True}}
-CELERY_TASK_ROUTES = {"*": {"queue": "celery"}}
-CELERY_TASK_TIME_LIMIT = int(timedelta(minutes=5).total_seconds())
-CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_WORKER_PREFETCH_MULTIPLIER = env.int("CELERY_WORKER_PREFETCH_MULTIPLIER", default=1)
-CELERY_BROKER_POOL_LIMIT = env.int("CELERY_BROKER_POOL_LIMIT", default=50)
+if REDIS_HOST:
+    CACHEOPS_REDIS = {
+        'host': REDIS_HOST,
+        'port': REDIS_PORT,
+        'db': 1,
+        'socket_timeout': 3,
+    }
+
+    CACHEOPS = {
+        'project.core.Validator': {'ops': 'all', 'timeout': 60*15},
+    }
+
+    CACHEOPS_DEGRADE_ON_FAILURE = True
+
+
+if REDIS_HOST:
+    CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="")
+    CELERY_RESULT_BACKEND = env("CELERY_BROKER_URL", default="")  # store results in Redis
+    CELERY_RESULT_EXPIRES = int(timedelta(days=1).total_seconds())  # time until task result deletion
+    CELERY_COMPRESSION = "gzip"  # task compression
+    CELERY_MESSAGE_COMPRESSION = "gzip"  # result compression
+    CELERY_SEND_EVENTS = True  # needed for worker monitoring
+    CELERY_BEAT_SCHEDULE = {  # type: ignore
+        "fetch_validators": {
+            "task": "project.core.tasks.fetch_validators",
+            "schedule": 60,
+            "options": {},
+        },
+    }
+
+    CELERY_TASK_CREATE_MISSING_QUEUES = False
+    CELERY_TASK_QUEUES = (Queue("celery"), Queue("worker"), Queue("dead_letter"))
+    CELERY_TASK_DEFAULT_EXCHANGE = "celery"
+    CELERY_TASK_DEFAULT_ROUTING_KEY = "celery"
+    CELERY_TASK_ANNOTATIONS = {"*": {"acks_late": True, "reject_on_worker_lost": True}}
+    CELERY_TASK_ROUTES = {"*": {"queue": "celery"}}
+    CELERY_TASK_TIME_LIMIT = int(timedelta(minutes=5).total_seconds())
+    CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+    CELERY_ACCEPT_CONTENT = ["json"]
+    CELERY_TASK_SERIALIZER = "json"
+    CELERY_RESULT_SERIALIZER = "json"
+    CELERY_WORKER_PREFETCH_MULTIPLIER = env.int("CELERY_WORKER_PREFETCH_MULTIPLIER", default=1)
+    CELERY_BROKER_POOL_LIMIT = env.int("CELERY_BROKER_POOL_LIMIT", default=50)
 
 DJANGO_STRUCTLOG_CELERY_ENABLED = True
-
-EMAIL_BACKEND = env("EMAIL_BACKEND")
-EMAIL_FILE_PATH = env("EMAIL_FILE_PATH")
-EMAIL_HOST = env("EMAIL_HOST")
-EMAIL_PORT = env.int("EMAIL_PORT")
-EMAIL_HOST_USER = env("EMAIL_HOST_USER")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
-EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS")
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 LOGGING = {
     "version": 1,
@@ -324,6 +339,50 @@ LOGGING = {
         },
     },
 }
+
+CENTRAL_PROMETHEUS_PROXY_URL = env.str("CENTRAL_PROMETHEUS_PROXY_URL", default="")
+UPSTREAM_PROMETHEUS_URL = env.str("UPSTREAM_PROMETHEUS_URL", default="")
+if not UPSTREAM_PROMETHEUS_URL and not CENTRAL_PROMETHEUS_PROXY_URL:
+    raise RuntimeError("Either UPSTREAM_PROMETHEUS_URL or CENTRAL_PROMETHEUS_PROXY_URL must be set")
+
+BITTENSOR_NETUID = env.int("BITTENSOR_NETUID", default=None)
+BITTENSOR_NETWORK = env.str("BITTENSOR_NETWORK", default=None)
+
+if UPSTREAM_PROMETHEUS_URL:
+    if BITTENSOR_NETUID is None or BITTENSOR_NETWORK is None:
+        raise RuntimeError("Both BITTENSOR_NETUID and BITTENSOR_NETWORK must be set when "
+                           "UPSTREAM_PROMETHEUS_URL is defined")
+    if not DATABASES:
+        raise RuntimeError("Either DATABASE_POOL_URL or DATABASE_URL must be set when "
+                           "UPSTREAM_PROMETHEUS_URL is defined")
+    if not REDIS_HOST:
+        raise RuntimeError("REDIS_HOST must be set when UPSTREAM_PROMETHEUS_URL is defined")
+
+
+BITTENSOR_WALLET_DIRECTORY = env.path(
+    "BITTENSOR_WALLET_DIRECTORY",
+    default=pathlib.Path("~").expanduser() / ".bittensor" / "wallets",
+)
+BITTENSOR_WALLET_NAME = env.str("BITTENSOR_WALLET_NAME", default=None)
+BITTENSOR_WALLET_HOTKEY_NAME = env.str("BITTENSOR_WALLET_HOTKEY_NAME", default=None)
+
+if CENTRAL_PROMETHEUS_PROXY_URL:
+    if BITTENSOR_WALLET_NAME is None or BITTENSOR_WALLET_HOTKEY_NAME is None:
+        raise RuntimeError("Both BITTENSOR_WALLET_NAME and BITTENSOR_WALLET_HOTKEY_NAME must be set when "
+                           "CENTRAL_PROMETHEUS_PROXY_URL is defined")
+
+
+@functools.cache
+def BITTENSOR_WALLET() -> bittensor.wallet:
+    if not BITTENSOR_WALLET_NAME or not BITTENSOR_WALLET_HOTKEY_NAME:
+        raise RuntimeError("Wallet not configured")
+    wallet = bittensor.wallet(
+        name=BITTENSOR_WALLET_NAME,
+        hotkey=BITTENSOR_WALLET_HOTKEY_NAME,
+        path=str(BITTENSOR_WALLET_DIRECTORY),
+    )
+    wallet.hotkey_file.get_keypair()  # this raises errors if the keys are inaccessible
+    return wallet
 
 
 def configure_structlog():

@@ -21,6 +21,22 @@ class RecursiveMultiProcessCollector(multiprocess.MultiProcessCollector):
 
 ENV_VAR_NAME = "PROMETHEUS_MULTIPROC_DIR"
 
+metrics_counter = prometheus_client.Counter(
+    'incoming',
+    'How many metrics per hotkey are ingested',
+    namespace='django',
+    unit='metrics',
+    labelnames=['hotkey'],
+)
+
+series_counter = prometheus_client.Counter(
+    'incoming',
+    'How many series per hotkey are ingested',
+    namespace='django',
+    unit='series',
+    labelnames=['hotkey'],
+)
+
 
 def metrics_view(request):
     """Exports metrics as a Django view"""
@@ -36,7 +52,7 @@ def metrics_view(request):
 
 
 num_tasks_in_queue = {}
-for queue in settings.CELERY_TASK_QUEUES:
+for queue in getattr(settings, 'CELERY_TASK_QUEUES', []):
     gauge = prometheus_client.Gauge(
         f"celery_{queue.name}_queue_len",
         f"How many tasks are there in '{queue.name}' queue",
