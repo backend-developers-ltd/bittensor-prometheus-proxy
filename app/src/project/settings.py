@@ -382,7 +382,6 @@ def BITTENSOR_WALLET() -> bittensor.wallet:
         path=str(BITTENSOR_WALLET_DIRECTORY),
     )
     wallet.hotkey_file.get_keypair()  # this raises errors if the keys are inaccessible
-    _wallet = wallet
     return wallet
 
 
